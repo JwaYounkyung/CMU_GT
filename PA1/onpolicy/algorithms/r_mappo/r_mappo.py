@@ -34,7 +34,7 @@ class R_MAPPO():
         self._use_policy_active_masks = args.use_policy_active_masks
 
         self.use_KL_pen = False
-        #self.beta=  
+        self.beta= 1
 
     
     def cal_value_loss(self, values, return_batch, active_masks_batch):
@@ -118,7 +118,10 @@ class R_MAPPO():
           Hint (Calculation of KL Divergence) You may calculate KLD by first getting the old policy and current policy, and calling the  kl_divergence() method from line 8.
           To get any given policy from the output of the last layer of the actor, refer to onpolicy/algorithms/utils/distributions.py
           '''
-          L_KLPEN = torch.min(sur1, sur2)
+          action_probs = FixedCategorical(torch.exp(action_log_probs))
+          old_action_probs = FixedCategorical(torch.exp(old_action_log_probs_batch))
+          kl = kl_divergence(action_probs, old_action_probs)
+          L_KLPEN = torch.min(sur1, sur2) - self.beta*kl
           if self._use_policy_active_masks:
               actor_loss = (-torch.sum(L_KLPEN, dim=-1, keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
           else:
