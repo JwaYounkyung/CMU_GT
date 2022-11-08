@@ -20,13 +20,20 @@ class PoacherWorld(World):
             agent.color = [[0.85, 0.35, 0.35],
                     [0.35, 0.35, 0.85], 
                     [0.35, 0.85, 0.35]][i]
-            agent.poacher_caught_rew = [-1, 1, 1][i]
-            agent.animal_caught_rew = [1.25, -5, -5][i]
+            agent.poacher_caught_rew = [-1, 1, 1][i] # actual reward
+            agent.animal_caught_rew = [1.25, -5, -5][i] # actual reward
             agent.caught = False
+            agent.animal_almost_caught_rew = [0.625, 0, 0][i]
+            agent.poacher_almost_caught_rew = [0, 0.5, 0.5][i]
+            agent.dist_rew = [0, 0, 0][i]
 
         # variables that track what happened in this step
         self.was_poacher_caught = False
         self.was_animal_caught = False
+        
+        self.was_poacher_almost_caught = False
+        self.was_animal_almost_caught = False
+        self.was_animal_visible = False
 
 
     def step(self):
@@ -40,15 +47,35 @@ class PoacherWorld(World):
 
         # check if any animal caught
         self.was_animal_caught = False
+        
         for i, landmark in enumerate(self.landmarks):
             if self.is_collision(self.poacher, landmark):
                 landmark.poacher_collision_time += 1
             else:
                 landmark.poacher_collision_time = 0
-
-            if landmark.poacher_collision_time >= 20 and not landmark.caught:
+                self.was_animal_almost_caught = False
+            
+            if landmark.poacher_collision_time > 10 and not landmark.caught:
+                self.was_animal_almost_caught = True
+            elif landmark.poacher_collision_time >= 20 and not landmark.caught:
                 landmark.caught = True
                 self.was_animal_caught = True
+        
+        visible_landmarks = [self.is_visible(self.poacher, l) for l in self.landmarks]
+        if sum(visible_landmarks) != 0:
+            self.poacher.dist_rew = min([self.dist(self.poacher, l) for i, l in enumerate(self.landmarks) if visible_landmarks[i]])
+            self.poacher.dist_rew = self.poacher.sight - self.poacher.dist_rew
+            self.was_animal_visible = True
+        else:
+            self.was_animal_visible = False
+            self.poacher.dist_rew = 0
+        
+        # check if poacher almost caught
+        self.was_poacher_almost_caught = False
+        if self.is_visible(self.ranger, self.poacher) and not self.poacher.caught:
+            self.was_poacher_almost_caught = True
+        elif not self.is_collision(self.ranger, self.poacher):
+            self.was_poacher_almost_caught = False
 
 
     def is_collision(self, agent1, agent2):
@@ -59,7 +86,22 @@ class PoacherWorld(World):
         dist = np.sqrt(np.sum(np.square(delta_pos)))
         dist_min = agent1.size + agent2.size
         return True if dist < dist_min else False
+    
+    def is_visible(self, agent, target):
+        '''
+        Return True if target is within the agent's sight.
+        '''
+        delta_pos = agent.state.p_pos - target.state.p_pos
+        dist = np.sqrt(np.sum(np.square(delta_pos)))
+        return True if dist < agent.sight else False
 
+    def dist(self, agent, target):
+        '''
+        Return True if target is within the agent's sight.
+        '''
+        delta_pos = agent.state.p_pos - target.state.p_pos
+        dist = np.sqrt(np.sum(np.square(delta_pos)))
+        return dist
 
 class Scenario(BaseScenario):
     def make_world(self):
@@ -122,6 +164,12 @@ class Scenario(BaseScenario):
             return agent.poacher_caught_rew
         elif world.was_animal_caught:
             return agent.animal_caught_rew
+        elif world.was_animal_almost_caught:
+            return agent.animal_almost_caught_rew
+        elif world.was_poacher_almost_caught:
+            return agent.poacher_almost_caught_rew
+        elif world.was_animal_visible:
+            return agent.dist_rew
         else:
             return 0
 
