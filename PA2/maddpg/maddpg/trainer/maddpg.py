@@ -21,6 +21,8 @@ def construct_q_function(agent_index, obs_n, act_n):
     :return num_q_outputs: (int) Number of outputs of the critic network.
     '''
     # TODO
+    q_input = tf.concat(obs_n + act_n, 1)
+    num_q_outputs = 1 
     return q_input, num_q_outputs
 
 
@@ -33,6 +35,7 @@ def compute_q_loss(q, target_q):
     :return q_loss: (tensorflow Tensor) Loss of the critic network. Shape: ().
     '''
     # TODO
+    q_loss = tf.reduce_mean(tf.square(q - target_q))
     return q_loss
 
 
@@ -84,6 +87,8 @@ def construct_p_function(agent_index, obs_n, action_dim):
     :return num_p_outputs: (int) Number of outputs of the actor network.
     '''
     # TODO
+    p_input = obs_n[agent_index]
+    num_p_outputs = action_dim
     return p_input, num_p_outputs
 
 
@@ -95,6 +100,7 @@ def compute_p_loss(q):
     :return pg_loss: (tensorflow Tensor) Loss of the actor network. Shape: ().
     '''
     # TODO
+    pg_loss = -tf.reduce_mean(q)
     return pg_loss
 
 
@@ -169,7 +175,9 @@ def compute_q_targets(agent_index, rew, done, obs_next_n, target_policy_func_n, 
     # Then, find the target Q-value for the next step. Note: If the episode is done, the target Q-value for the next step should be 0.
 
     # Then, calculate the target Q-value for this step using the immediate reward and the discount factor.
-
+    target_policy_func_n = [policy(obs_next_n[0]) for policy in target_policy_func_n]
+    target_q_func = target_q_func(*(obs_next_n + target_policy_func_n))
+    target_q = rew + gamma * (1.0 - done) * target_q_func
     return target_q
 
 
@@ -182,6 +190,8 @@ def update_target_param(param, target_param):
     :return new_target_param: (tensorflow Variable) Updated value of target network parameter. Shape: same as param.
     '''
     # TODO
+    pol = 0.99
+    new_target_param = pol * target_param + (1.0-pol) * param
     return new_target_param
 
 
