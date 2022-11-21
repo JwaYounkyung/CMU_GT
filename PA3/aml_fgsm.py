@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 epsilons = [0, .05, .1, .15, .2, .25, .3]
 
-pretrained_model = "lenet_mnist_model.pth"
+pretrained_model = "PA3/lenet_mnist_model.pth"
 use_cuda=True
 
 # LeNet Model definition
@@ -54,14 +54,14 @@ model.eval()
 def fgsm_attack(image, epsilon, data_grad):
     # !! Put your code below
     # Collect the element-wise sign of the data gradient, you can use data_grad.sign()
-
+    sign_data_grad = data_grad.sign()   
     # Create the perturbed image by adjusting each pixel of the input image
-
+    perturbed_image = image + epsilon*sign_data_grad
     # Adding clipping to maintain [0,1] range, you can use function torch.clamp
-
+    perturbed_image = torch.clamp(perturbed_image, 0, 1)
     # Return the perturbed image
-    
-    # !! Put your code above
+    return perturbed_image
+
 
 def test( model, device, test_loader, epsilon ):
 

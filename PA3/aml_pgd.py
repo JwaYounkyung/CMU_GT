@@ -12,7 +12,7 @@ alpha = 5e-3
 num_iter = 1000
 num_test = 100
 
-pretrained_model = "lenet_mnist_model.pth"
+pretrained_model = "PA3/lenet_mnist_model.pth"
 use_cuda=True
 
 # LeNet Model definition
@@ -84,7 +84,6 @@ def test( model, device, test_loader, epsilon ):
 
         # Initialize perturbed image
         delta = torch.zeros_like(image)
-        # Initialize perturbed image
         # In iteration 0, the perturbed image is the same as the original image
         # But we need create a new tensor in pytorch and only copy the data
         perturbed_image = torch.zeros_like(image, requires_grad=True)
@@ -97,25 +96,27 @@ def test( model, device, test_loader, epsilon ):
             # !! Put your code below
 
             # Send the perturbed image in the last iteration to model to get output
-
+            output = model(perturbed_image)
             # Calculate the loss given the new output and the target
-
+            loss = F.nll_loss(output, target)
             # Zero all existing gradients
-
+            model.zero_grad()
             # Calculate gradients of model in backward pass
-
+            loss.backward()
             # Collect gradient w.r.t. the input (perturbed_image)
-
+            delta.grad = perturbed_image.grad
             # Update delta based on the gradient
-
+            delta.data = delta.data + alpha * delta.grad.data
             # Adding clipping to maintain [-epsilon,epsilon] range for delta, you can use function torch.clamp
-
+            delta.data = torch.clamp(delta.data, -epsilon, epsilon)
             # Adjust delta to make sure the perturbed image is in the range [0,1] You can apply torch clamp to
             # delta+image, and then update delta as the difference between the clamped image and the original image
-
+            perturbed_image.data = torch.clamp(perturbed_image.data + delta.data, 0, 1) - image.data
             # update perturbed_image
+            perturbed_image.data = image.data + delta.data
 
             # Reset gradient of perturbed_image to zero, you can use x.grad.zero_()
+            perturbed_image.grad.zero_()
 
 
             # !! Put your code above
