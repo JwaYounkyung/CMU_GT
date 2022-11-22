@@ -104,16 +104,16 @@ def test( model, device, test_loader, epsilon ):
             # Calculate gradients of model in backward pass
             loss.backward()
             # Collect gradient w.r.t. the input (perturbed_image)
-            delta.grad = perturbed_image.grad
+            delta.data = perturbed_image.grad
             # Update delta based on the gradient
-            delta.data = delta.data + alpha * delta.grad.data
+            delta.data = (perturbed_image.data - image.data) + alpha * delta.data
             # Adding clipping to maintain [-epsilon,epsilon] range for delta, you can use function torch.clamp
             delta.data = torch.clamp(delta.data, -epsilon, epsilon)
             # Adjust delta to make sure the perturbed image is in the range [0,1] You can apply torch clamp to
             # delta+image, and then update delta as the difference between the clamped image and the original image
-            perturbed_image.data = torch.clamp(perturbed_image.data + delta.data, 0, 1) - image.data
+            delta.data = torch.clamp(image.data + delta.data, 0, 1) - image.data
             # update perturbed_image
-            perturbed_image.data = image.data + delta.data
+            perturbed_image.data = image.detach() + delta.detach()
 
             # Reset gradient of perturbed_image to zero, you can use x.grad.zero_()
             perturbed_image.grad.zero_()
