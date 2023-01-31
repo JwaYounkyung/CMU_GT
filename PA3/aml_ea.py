@@ -11,7 +11,7 @@ epsilons = [.1, .2, .3]
 num_iter = 500
 num_test = 50
 
-pretrained_model = "lenet_mnist_model.pth"
+pretrained_model = "PA3/lenet_mnist_model.pth"
 use_cuda=True
 
 # LeNet Model definition
@@ -63,8 +63,8 @@ def ea_attack(N, image, target_class, epsilon, rho_min, beta_min, num_iter, mode
 
     # initialize the population with random images in the feasible region
     # if you are familiar with pytorch and tensor operation, you can create a tensor for the population like the following
-    # population = torch.empty([N] + dims, device=device).uniform_(-epsilon, epsilon)
-    # population = torch.clamp(population + image, 0, 1) - image
+    population = torch.empty([N] + dims, device=device).uniform_(-epsilon, epsilon)
+    population = torch.clamp(population + image, 0, 1) - image
     # if you prefer to use a list, you may consider the following
     # population = []
     # for n in range(N):
@@ -73,51 +73,125 @@ def ea_attack(N, image, target_class, epsilon, rho_min, beta_min, num_iter, mode
     #     population.append(rand_image)
 
     # initialize two parameters rho=0.5 and beta=0.4
+    rho = 0.5
+    beta = 0.4
 
     # initialize num_plateaus to be 0
+    num_plateaus = 0
+
+    # initialize the best image as the original image
+    best_image = image
+
+    # initialize the best fitness as the original image's fitness
+    prediction = model(image)
+    best_fitness = prediction[0][target_class] - (sum(prediction[0]) - prediction[0][target_class])
 
     for i in range(num_iter):
 
         # For each member in the current population, compute the fitness score. Note that you will need to clamp the
         # value to a large range, e.g., [-1000,1000] to avoid getting "inf"
+        fitnesses = []
+        for n in range(N):
+            prediction = model(population[n])
+            fitness = prediction[0][target_class] - (sum(prediction[0]) - prediction[0][target_class])
+            fitness = torch.clamp(fitness, -1000, 1000) 
+            a = fitness.detach().numpy()
+            if np.isnan(a):
+                fitness = -1000
+            fitnesses.append(fitness)
+
+            # if fitness > best_fitness:
+            #     best_fitness = fitness
+            #     best_image = population[n]
 
         # Find the elite member, which is the one with the highest fitness score
+        fitnesses = torch.Tensor(fitnesses, device=device)
+        elite_idx = torch.argmax(fitnesses)
+        elite = population[elite_idx]
 
         # Add the elite member to the new population
+        new_population = torch.empty([N] + dims, device=device)
+        new_population[0] = elite
 
         # If the elite member can succeed in attack, terminate and return the elite member
-
+        if torch.argmax(model(elite)) == target_class:
+            return elite
+        
         # If the elite member’s fitness score is no better than the last population’s elite member’s fitness score,
         # increment num_plateaus. It is recommended to use a threshold of 1e-5 to avoid numerical instability
+        if torch.abs(fitnesses[elite_idx] - best_fitness) < 1e-5:
+            num_plateaus += 1
+        else:
+            num_plateaus = 0
+        best_fitness = fitnesses[elite_idx]
 
+        if i >= num_iter - 1:
+            # If num_plateaus is greater than or equal to 10, terminate and return the best member in the last population
+            return population[elite_idx]  
 
-        # Compute the probability each member in the population should be chosen by applying softmax to the fitness
-        # scores
+        for n in range(1, N):
+            # Compute the probability each member in the population should be chosen by applying softmax to the fitness
+            # scores
+            probs = F.softmax(fitnesses, dim=0)
 
-        # Choose a member in the current population according to the probability, name it parent_1
+            # Choose a member in the current population according to the probability, name it parent_1
+            idx = torch.distributions.multinomial.Multinomial(1, probs).sample()
+            idx_1 = torch.argmax(idx)
+            parent_1 = population[idx_1]
 
-        # Choose a member in the current population according to the probability, name it parent_2
+            # Choose a member in the current population according to the probability, name it parent_2
+            idx = torch.distributions.multinomial.Multinomial(1, probs).sample()
+            idx_2 = torch.argmax(idx)
+            parent_2 = population[idx_2]
 
-        # Generate a “child” image from parent1 and parent2: For each pixel, take parent1’s corresponding pixel
-        # value with probability p=fitness(parent1)/(fitness(parent1)+fitness(parent2))
-        # and take parent2’s corresponding pixel value with probability 1-p
+            # Generate a “child” image from parent1 and parent2: For each pixel, take parent1’s corresponding pixel
+            # value with probability p=fitness(parent1)/(fitness(parent1)+fitness(parent2))
+            # and take parent2’s corresponding pixel value with probability 1-p
+            p = fitnesses[idx_1] / (fitnesses[idx_1] + fitnesses[idx_2])
+            mask = torch.empty(dims, device=device)
 
-        # With probability q, add a random noise to the children image with pixel-wise value uniformly sampled from
-        # [-beta*epsilon,beta*epsilon]
+            for b in range(dims[0]):
+                for h in range(dims[2]):
+                    for w in range(dims[3]):
+                        if torch.rand(1, device=device) < p:
+                            mask[b][0][h][w] = 1
+                        else:
+                            mask[b][0][h][w] = 0
 
-        # Apply clipping on the child image to make sure it is in the feasible region F
+            child = parent_1 * mask + parent_2 * (1 - mask)
+
+            # With probability q, add a random noise to the children image with pixel-wise value uniformly sampled from
+            # [-beta*epsilon,beta*epsilon]
+            noise = torch.empty(dims, device=device)
+            for b in range(dims[0]):
+                for h in range(dims[2]):
+                    for w in range(dims[3]):
+                        if torch.rand(1, device=device) < rho:
+                            noise[b][0][h][w] = noise[b][0][h][w].uniform_(-beta*epsilon, beta*epsilon)
+            
+            child = child + noise
+
+            # Apply clipping on the child image to make sure it is in the feasible region F
+            child = torch.clamp(child - image, -epsilon, epsilon) + image
+            child = torch.clamp(child, 0, 1)
+
+            # Add the child image to the new population
+            new_population[n] = child
 
 	# Add this child to the population, repeat generating children in this way until the population has N members
+        population = new_population
 
 
         # Update the value of rho as max(rho_min,0.5*0.9^num_plateaus)
+        rho = max(rho_min, 0.5 * 0.9 ** num_plateaus)
 
         # Update the value of beta as max(beta_min,0.4*0.9^num_plateaus)
+        beta = max(beta_min, 0.4 * 0.9 ** num_plateaus)
 
         # !! Put your code above
 
     # Return the perturbed image
-    return perturbed_image
+    return population[elite_idx]
 
 def test( model, device, test_loader, epsilon ):
 
